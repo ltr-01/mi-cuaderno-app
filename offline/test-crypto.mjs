@@ -1,0 +1,17 @@
+import {readFile} from 'node:fs/promises';
+import {transpileModule,ScriptTarget,ModuleKind} from 'typescript';
+import assert from 'node:assert/strict';
+const source=await readFile(new URL('./src/storage.ts',import.meta.url),'utf8');
+const js=transpileModule(source,{compilerOptions:{target:ScriptTarget.ES2022,module:ModuleKind.ES2022}}).outputText;
+const {deriveKey,encrypt,decrypt}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const salt=Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('base64');
+const key=await deriveKey('solo una frase sintetica de prueba',salt);
+const body=JSON.stringify({data:{entries:[{title:'NOTA DE PRUEBA',body:'contenido de prueba'}]},photos:{test:'data:image/png;base64,test'}});
+const cipher=await encrypt(body,key);
+assert(!cipher.includes('NOTA DE PRUEBA'));
+assert.equal(await decrypt(cipher,key),body);
+assert.notEqual(await encrypt(body,key),cipher);
+await assert.rejects(()=>deriveKey('frase incorrecta',salt).then(k=>decrypt(cipher,k)));
+const [iv,data]=cipher.split('.');const bytes=Buffer.from(data,'base64');bytes[0]^=1;
+await assert.rejects(()=>decrypt(iv+'.'+bytes.toString('base64'),key));
+console.log('PASS: cifrado de datos y fotos, recuperación, IV único, llave incorrecta y manipulación rechazadas.');
